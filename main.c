@@ -11,7 +11,7 @@
 #include <readline/history.h>
 
 /* Functions that will edit our environment variables. */
-int com_set(), com_delete(), com_print();
+int SetCommand(), DeleteCommand(), PrintCommand(), PwdCommand();
 
 /*Structure which will contain the programs for the environment manipulation.*/
 typedef struct {
@@ -20,15 +20,16 @@ typedef struct {
     char *doc;      //Tooltip
 } COMMAND;
 
-COMMAND commands[] = {
-        {"set", com_set, "Set the value of the environment variable."},
-        {"delete", com_delete, "Remove the environment variable."},
-        {"print", com_print, "Print the value of the named environment variable."}
+COMMAND Commands[] = {
+        {"set", SetCommand, "Set the value of the environment variable."},
+        {"delete", DeleteCommand, "Remove the environment variable."},
+        {"print", PrintCommand, "Print the value of the named environment variable."},
+        {"pwd", PwdCommand, "Print the current working directory." }
 };
 
 /*fwd declarations*/
-char *stripwhite();
-COMMAND *find_command();
+char *StripWhite();
+COMMAND *FindCommand();
 
 /*done flag*/
 int done;
@@ -42,9 +43,9 @@ will allows the user to see/edit previous lines. */
 int main(int argc, char **argv) {
     char *s, *line;
     while (s=readline("prompt> ")) {
-        line = stripwhite(s);
+        line = StripWhite(s);
         add_history(line);
-        execute_line(line);
+        ExecuteCommand(line);
         free(s);
         /* clean up! */
     }
@@ -52,44 +53,44 @@ int main(int argc, char **argv) {
 }
 
 /*Execute a command line. */
-int execute_line (line) char *line;
+int ExecuteCommand(line) char *line;
 {
-    register int eachLetter;
-    COMMAND *command;
-    char *wholeWord;
+    register int EachLetter;
+    COMMAND *Command;
+    char *WholeWord;
 
     /*Isolate the command word from the rest of the message.*/
-    eachLetter = 0;
-    while (line[eachLetter] && whitespace(line[eachLetter])) eachLetter++;
-    wholeWord = line + eachLetter;
+    EachLetter = 0;
+    while (line[EachLetter] && whitespace(line[EachLetter])) EachLetter++;
+    WholeWord = line + EachLetter;
 
-    while (line[eachLetter] && !whitespace(line[eachLetter])) eachLetter++;
+    while (line[EachLetter] && !whitespace(line[EachLetter])) EachLetter++;
 
-    if (line[eachLetter]) line[eachLetter++] = '\0';
+    if (line[EachLetter]) line[EachLetter++] = '\0';
 
-    command = find_command(wholeWord);
+    Command = FindCommand(WholeWord);
 
-    if(!command)
+    if(!Command)
     {
-        fprintf(stderr, "%s: No such command for Project. \n", wholeWord);
+        fprintf(stderr, "%s: No such command for Project. \n", WholeWord);
         return -1;
     }
 
-    while (whitespace (line[eachLetter])) eachLetter++;
+    while (whitespace (line[EachLetter])) EachLetter++;
 
-    wholeWord = line + eachLetter;
+    WholeWord = line + EachLetter;
 
-    return ((*(command->func)) (wholeWord));
+    return ((*(Command->func)) (WholeWord));
 }
 
 /*Look up command name, return null ptr if none was found otherwise
  * return the pointer to the command.*/
-COMMAND * find_command(name)
-        char *name; {
-    register int commandNum;
-    for (commandNum = 0; commands[commandNum].name; commandNum++) {
-        for (commandNum = 0; commands[commandNum].name; commandNum++) {
-            if (strcmp(name, commands[commandNum].name) == 0) return (&commands[commandNum]);
+COMMAND * FindCommand(Name)
+        char *Name; {
+    register int CommandNum;
+    for (CommandNum = 0; Commands[CommandNum].name; CommandNum++) {
+        for (CommandNum = 0; Commands[CommandNum].name; CommandNum++) {
+            if (strcmp(Name, Commands[CommandNum].name) == 0) return (&Commands[CommandNum]);
         }
         return ((COMMAND *) NULL);
     }
@@ -97,7 +98,7 @@ COMMAND * find_command(name)
 
 /*Strip white space
  * Returns a pointer to a string.*/
-char * stripwhite(string) char *string; {
+char * StripWhite(string) char *string; {
     register char *s, *t;
     for(s = string; whitespace (*s); s++);
     if (*s == 0) return (s);
@@ -108,7 +109,7 @@ char * stripwhite(string) char *string; {
 }
 
 /* Set the value of the environment variable to the value specified.*/
-com_set(arg) char *arg;{
+SetCommand(arg) char *arg;{
     //local variables to parse the incoming character array
     char *tmp,*tmp1, *x;
 
@@ -116,14 +117,14 @@ com_set(arg) char *arg;{
     /*Effectively getting the name of the environment variable to set*/
     tmp = strtok(arg, "=");
     /*Remove any remaining white space*/
-    tmp = stripwhite(tmp);
+    tmp = StripWhite(tmp);
     /*Print result for visual debug*/
     printf("EVarName to be set: %s\n", tmp);
     /*Tokenize the rest of the character array until the terminal character*/
     /*Effectively get the environment variable value to set*/
     tmp1 = strtok(NULL, "\0");
     /*Remove any remaining white space*/
-    tmp1 = stripwhite(tmp1);
+    tmp1 = StripWhite(tmp1);
     /*Print result for visual debug*/
     printf("EVarVal to be set: %s\n", tmp1);
     /*Set environment variable based on supplied parameters.*/
@@ -138,7 +139,7 @@ com_set(arg) char *arg;{
 }
 
 /* Delete the named environment variable. */
-com_delete(arg) char *arg;{
+DeleteCommand(arg) char *arg;{
     char *x;
     x = getenv(arg);
     printf("Environment Variable to be Deleted: %s\n", arg);
@@ -154,10 +155,19 @@ com_delete(arg) char *arg;{
 }
 
 /*Print the named environment variable. */
-com_print(arg) char *arg;{
+PrintCommand(arg) char *arg;{
     char *x;
     x = getenv(arg);
     printf("Environment Variable Name: %s\n", arg);
     printf("Environment Variable Value: %s\n", (x != NULL) ? x : "undefined");
     return 1;
+}
+
+PwdCommand(arg) char *arg; {
+    char Directory[2048], *DirectoryString;
+    DirectoryString = getcwd(Directory, 2048);
+    if (DirectoryString == 0){
+        printf("error");
+    }
+    printf("Current Directory: %s\n",Directory);
 }
