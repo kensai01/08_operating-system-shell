@@ -43,8 +43,9 @@ int main(int argc, char **argv) {
     char *s, *line;
     while (s=readline("prompt> ")) {
         line = stripwhite(s);
-        add_history(s);
-        /* adds tt
+        add_history(line);
+        execute_line(line);
+        free(s);
         /* clean up! */
     }
     return(0);
@@ -108,14 +109,39 @@ char * stripwhite(string) char *string; {
 
 /* Set the value of the environment variable to the value specified.*/
 com_set(arg) char *arg;{
-    printf("Executed com_set.");
+    //local variables to parse the incoming character array
+    char *tmp,*tmp1, *x;
+    //printf(arg);
+
+    /*Tokenize the char array to delimit at the equals sign*/
+    /*Effectively getting the name of the environment variable to set*/
+    tmp = strtok(arg, "=");
+    /*Remove any remaining white space*/
+    tmp = stripwhite(tmp);
+    /*Print result for visual debug*/
+    printf("EVarName: %s\n", tmp);
+    /*Tokenize the rest of the character array until the terminal character*/
+    /*Effectively get the environment variable value to set*/
+    tmp1 = strtok(NULL, "\0");
+    /*Remove any remaining white space*/
+    tmp1 = stripwhite(tmp1);
+    /*Print result for visual debug*/
+    printf("EVarVal: %s\n", tmp1);
+    //printf("Executed com_set with arguments: EVarName: %s EVarVal: %s\n", tmp, tmp1);
+    /*Set environment variable based on supplied parameters.*/
+    setenv(tmp,tmp1,1);
+    //x = getenv(tmp);
+    //printf("Environment Variable Set: %s\n", (x != NULL) ? x : "undefined");
+    return 1;
 }
 
 /* Delete the named environment variable */
 com_delete(arg) char *arg;{
-    printf("Executed com_delete.");
+    printf("Executed com_delete with argument: %s", arg);
+    return 1;
 }
 
 com_print(arg) char *arg;{
-    printf("Executed com_print.");
+    printf("Executed com_print with argument: %s", arg);
+    return 1;
 }
