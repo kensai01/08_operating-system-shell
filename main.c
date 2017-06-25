@@ -11,7 +11,7 @@
 #include <readline/history.h>
 
 /* Functions that will edit our environment variables. */
-int SetCommand(), DeleteCommand(), PrintCommand(), PwdCommand();
+int SetCommand(), DeleteCommand(), PrintCommand(), PwdCommand(), ChangeDirCommand(), QuitCommand();
 
 /*Structure which will contain the programs for the environment manipulation.*/
 typedef struct {
@@ -24,32 +24,39 @@ COMMAND Commands[] = {
         {"set", SetCommand, "Set the value of the environment variable."},
         {"delete", DeleteCommand, "Remove the environment variable."},
         {"print", PrintCommand, "Print the value of the named environment variable."},
-        {"pwd", PwdCommand, "Print the current working directory." }
+        {"pwd", PwdCommand, "Print the current working directory." },
+        {"cd", ChangeDirCommand, "Change the current working directory to the supplied argument."},
+        {"exit", QuitCommand, "Terminate the shell."}
 };
 
 /*fwd declarations*/
 char *StripWhite();
 COMMAND *FindCommand();
 
-/*done flag*/
-int done;
 
 /* Simple example of using gnu readline to get lines of input from a user.
 Needs to be linked with -lreadline -lcurses add_history tells the readline
 library to add the line to it's internal history, so that using up-arrow (or ^p)
 will allows the user to see/edit previous lines. */
 
+/*Using quit flag to give us a chance to clean up after ourselves. Otherwise
+ * prog would quit right from the quit function and free(s) would never get to run again.*/
+int quitFlag = 0;
 
 int main(int argc, char **argv) {
     char *s, *line;
-    while (s=readline("prompt> ")) {
-        line = StripWhite(s);
-        add_history(line);
-        ExecuteCommand(line);
-        free(s);
-        /* clean up! */
+    while (s=readline("prompt> ")){
+        if(quitFlag == 0) {
+            line = StripWhite(s);
+            add_history(line);
+            ExecuteCommand(line);
+            /* clean up! */
+            free(s);
+        }
+        if(quitFlag == 1){
+            exit(0);
+        }
     }
-    return(0);
 }
 
 /*Execute a command line. */
@@ -170,4 +177,23 @@ PwdCommand(arg) char *arg; {
         printf("error");
     }
     printf("Current Directory: %s\n",Directory);
+}
+
+ChangeDirCommand(arg) char *arg; {
+    /*Ensure that we don't get an error back when changing directories.*/
+    if (chdir(arg) == -1){
+        perror(arg);
+        return 1;
+    }
+        /* Otherwise get the new directory and print it.*/
+    else
+        PwdCommand("");
+        return 0;
+}
+
+/*Sets the quit flag on so that the program can clean up and exit.*/
+QuitCommand(arg) char *arg; {
+    /*Set the quit flag on.*/
+    quitFlag = 1;
+    return 0;
 }
