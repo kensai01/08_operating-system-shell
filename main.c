@@ -50,17 +50,50 @@ int main(int argc, char **argv) {
     return(0);
 }
 
+/*Execute a command line. */
+int execute_line (line) char *line;
+{
+    register int eachLetter;
+    COMMAND *command;
+    char *wholeWord;
+
+    /*Isolate the command word from the rest of the message.*/
+    eachLetter = 0;
+    while (line[eachLetter] && whitespace(line[eachLetter])) eachLetter++;
+    wholeWord = line + eachLetter;
+
+    while (line[eachLetter] && !whitespace(line[eachLetter])) eachLetter++;
+
+    if (line[eachLetter]) line[eachLetter++] = '\0';
+
+    command = find_command(wholeWord);
+
+    if(!command)
+    {
+        fprintf(stderr, "%s: No such command for Project. \n", wholeWord);
+        return -1;
+    }
+
+    while (whitespace (line[eachLetter])) eachLetter++;
+
+    wholeWord = line + eachLetter;
+
+    return ((*(command->func)) (wholeWord));
+}
+
 /*Look up command name, return null ptr if none was found otherwise
  * return the pointer to the command.*/
 COMMAND * find_command(name)
-    char *name; {
-    register int commandNumIterator;
-    for (commandNumIterator = 0; commands[commandNumIterator].name; commandNumIterator++) {
-    for (commandNumIterator = 0; commands[commandNumIterator].name; commandNumIterator++) {
-        if (strcmp(name, commands[commandNumIterator].name) == 0) return (&commands[commandNumIterator]);
+        char *name; {
+    register int commandNum;
+    for (commandNum = 0; commands[commandNum].name; commandNum++) {
+        for (commandNum = 0; commands[commandNum].name; commandNum++) {
+            if (strcmp(name, commands[commandNum].name) == 0) return (&commands[commandNum]);
+        }
+        return ((COMMAND *) NULL);
     }
-
 }
+
 /*Strip white space
  * Returns a pointer to a string.*/
 char * stripwhite(string) char *string; {
