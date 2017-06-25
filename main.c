@@ -1,4 +1,5 @@
 #include <stdio.h>
+#define _POSIX_SOURCE
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/types.h>
@@ -9,7 +10,6 @@
 #include <readline/readline.h>
 #include <readline/history.h>
 
-/*Based on the fileman example from the GNU Readline man pages,*/
 /* Functions that will edit our environment variables. */
 int com_set(), com_delete(), com_print();
 
@@ -111,7 +111,6 @@ char * stripwhite(string) char *string; {
 com_set(arg) char *arg;{
     //local variables to parse the incoming character array
     char *tmp,*tmp1, *x;
-    //printf(arg);
 
     /*Tokenize the char array to delimit at the equals sign*/
     /*Effectively getting the name of the environment variable to set*/
@@ -119,29 +118,46 @@ com_set(arg) char *arg;{
     /*Remove any remaining white space*/
     tmp = stripwhite(tmp);
     /*Print result for visual debug*/
-    printf("EVarName: %s\n", tmp);
+    printf("EVarName to be set: %s\n", tmp);
     /*Tokenize the rest of the character array until the terminal character*/
     /*Effectively get the environment variable value to set*/
     tmp1 = strtok(NULL, "\0");
     /*Remove any remaining white space*/
     tmp1 = stripwhite(tmp1);
     /*Print result for visual debug*/
-    printf("EVarVal: %s\n", tmp1);
-    //printf("Executed com_set with arguments: EVarName: %s EVarVal: %s\n", tmp, tmp1);
+    printf("EVarVal to be set: %s\n", tmp1);
     /*Set environment variable based on supplied parameters.*/
-    setenv(tmp,tmp1,1);
-    //x = getenv(tmp);
-    //printf("Environment Variable Set: %s\n", (x != NULL) ? x : "undefined");
-    return 1;
+    if (setenv(tmp,tmp1,1) == 0)
+    {
+        printf("Environment variable set.\n");
+        return 0;
+    }
+    else
+        printf("Unable to set Environment Variable. Please try again.\n");
+    return 0;
 }
 
-/* Delete the named environment variable */
+/* Delete the named environment variable. */
 com_delete(arg) char *arg;{
-    printf("Executed com_delete with argument: %s", arg);
+    char *x;
+    x = getenv(arg);
+    printf("Environment Variable to be Deleted: %s\n", arg);
+    printf("Environment Variable Value before Deletion: %s\n", x);
+    if(unsetenv(arg) == 0) {
+        x = getenv(arg);
+        printf("Environment Variable Value after Deletion Attempt: %s\n", (x != NULL) ? x : "undefined");
+        return 0;
+    }
+    else
+        printf("Unable to Delete Environment Variable. Please Try Again.\n");
     return 1;
 }
 
+/*Print the named environment variable. */
 com_print(arg) char *arg;{
-    printf("Executed com_print with argument: %s", arg);
+    char *x;
+    x = getenv(arg);
+    printf("Environment Variable Name: %s\n", arg);
+    printf("Environment Variable Value: %s\n", (x != NULL) ? x : "undefined");
     return 1;
 }
