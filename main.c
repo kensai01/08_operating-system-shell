@@ -1,11 +1,12 @@
 #include <stdio.h>
-#define _POSIX_SOURCE
 #include <stdlib.h>
 #include <unistd.h>
+#include <string.h>
 #include <sys/types.h>
 #include <sys/file.h>
 #include <sys/stat.h>
 #include <sys/errno.h>
+#include <sys/wait.h>
 
 #include <readline/readline.h>
 #include <readline/history.h>
@@ -30,9 +31,8 @@ COMMAND Commands[] = {
 };
 
 /*fwd declarations*/
-char *StripWhite();
+char *StripWhite(char*);
 COMMAND *FindCommand();
-
 
 /* Simple example of using gnu readline to get lines of input from a user.
 Needs to be linked with -lreadline -lcurses add_history tells the readline
@@ -60,11 +60,24 @@ int main(int argc, char **argv) {
 }
 
 /*Execute a command line. */
-int ExecuteCommand(line) char *line;
+ExecuteCommand(line) char *line;
 {
     register int EachLetter;
     COMMAND *Command;
     char *WholeWord;
+    //printf("line: %c\n", line[0]);
+    printf("WholeWord: %s\n", line);
+    char this = line[0];
+    int flagDot = 0;
+    int flagSlash = 0;
+    char *sentence;
+    sentence = malloc(255*sizeof(char));
+    strcpy(sentence, line);
+    printf("%s\n", sentence);
+
+    /*Set the flag according to which external command first element user supplied */
+    if (this == '.') { flagDot = 1; printf("Dot Flag Set\n");}
+    if (this == '/') { flagSlash = 1; printf("Slash Flag Set\n");}
 
     /*Isolate the command word from the rest of the message.*/
     EachLetter = 0;
@@ -76,11 +89,83 @@ int ExecuteCommand(line) char *line;
     if (line[EachLetter]) line[EachLetter++] = '\0';
 
     Command = FindCommand(WholeWord);
-
+    /*Check to see if command supplied is internal or external.*/
     if(!Command)
     {
-        fprintf(stderr, "%s: No such command for Project. \n", WholeWord);
-        return -1;
+        char *token;
+        char *next_token;
+        int counter = 1;
+        token = strtok(sentence, " ");
+        next_token = token;
+        while (next_token != NULL){
+            printf("Token %d: %s\n", counter, token);
+
+            if(next_token = strtok(NULL, " ")){
+                token = next_token;
+            }
+            counter++;
+        }
+        counter--;
+        printf("Token %d: %s\n", counter, token);
+        /*Remove any remaining white space*/
+        //tmp = StripWhite(tmp);
+
+        /*Tokenize the rest of the character array until the terminal character*/
+        /*Effectively get the environment variable value to set*/
+        //tmp1 = strtok(NULL, "\0");
+        /*Remove any remaining white space*/
+        //tmp1 = StripWhite(tmp1);
+        /*Print result for visual debug*/
+        //printf("EVarVal to be set: %s\n", tmp1);
+
+        pid_t pid;
+        /*The command is external, so check if its prefixes with a / or a ., if so
+        * the user is specifying a complete path to the executable file. */
+        if (flagSlash == 1 || flagDot == 1) {
+            pid = fork();
+            if (pid < 0){
+                printf("Fork Failed\n");
+                return 1;
+                }
+            else if (pid == 0) {
+                printf("My PID is %d\n", getpid());
+                printf("Complete Path Supplied.\n");
+                printf("Local PID %d\n", pid);
+                /*User is supplying the complete path.*/
+                execlp("bin/ls","ls", "-l", NULL);
+                }
+
+            else {
+                printf("My PID is %d\n", getpid());
+                printf("Local PID %d\n", pid);
+                int cs;
+                wait(&cs);
+                printf("Child Process Complete. Status %d\n", cs);
+                return 0;
+            }
+        }
+        else {
+            pid = fork();
+            if (pid < 0){
+                printf("Fork Failed\n");
+                return 1;
+            }
+            else if (pid == 0) {
+                printf("My PID is %d\n", getpid());
+                printf("Executable Name Supplied.\n");
+                printf("Local PID %d\n", pid);;
+                /*User is supplying the executable file name.*/
+            }
+
+            else {
+                printf("My PID is %d\n", getpid());
+                printf("Local PID %d\n", pid);
+                int cs;
+                wait(&cs);
+                printf("Child Process Complete. Status %d\n", cs);
+                return 0;
+            }
+        }
     }
 
     while (whitespace (line[EachLetter])) EachLetter++;
@@ -95,12 +180,12 @@ int ExecuteCommand(line) char *line;
 COMMAND * FindCommand(Name)
         char *Name; {
     register int CommandNum;
-    for (CommandNum = 0; Commands[CommandNum].name; CommandNum++) {
+
         for (CommandNum = 0; Commands[CommandNum].name; CommandNum++) {
             if (strcmp(Name, Commands[CommandNum].name) == 0) return (&Commands[CommandNum]);
         }
         return ((COMMAND *) NULL);
-    }
+
 }
 
 /*Strip white space
@@ -118,7 +203,7 @@ char * StripWhite(string) char *string; {
 /* Set the value of the environment variable to the value specified.*/
 SetCommand(arg) char *arg;{
     //local variables to parse the incoming character array
-    char *tmp,*tmp1, *x;
+    char *tmp,*tmp1;
 
     /*Tokenize the char array to delimit at the equals sign*/
     /*Effectively getting the name of the environment variable to set*/
@@ -177,6 +262,7 @@ PwdCommand(arg) char *arg; {
         printf("error");
     }
     printf("Current Directory: %s\n",Directory);
+    return 0;
 }
 
 ChangeDirCommand(arg) char *arg; {
