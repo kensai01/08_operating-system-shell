@@ -8,5 +8,7 @@ http://web.mit.edu/gnu/doc/html/rlman_2.html
 https://stackoverflow.com/questions/43797645/c-function-is-deprecated
 https://stackoverflow.com/questions/4334969/parsing-an-array-of-chars
 https://www.ibm.com/support/knowledgecenter/en/SSB23S_1.1.0.14/gtpc2/cpp_unsetenv.html
+https://stackoverflow.com/questions/19074456/how-to-store-temp-value-for-strtok-without-changing-the-initial-token
+https://stackoverflow.com/questions/11818491/dynamic-parameter-passing-to-execlp-function-in-c
 
 

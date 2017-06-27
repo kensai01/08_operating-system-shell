@@ -94,12 +94,19 @@ ExecuteCommand(line) char *line;
     {
         char *token;
         char *next_token;
-        int counter = 1;
+        int counter = 1, position = 0;
+        char **StorageArray = malloc(128 * sizeof(char*));
+
+        if (!StorageArray) {
+            fprintf(stderr, "Dynamic Memory Allocation Error.\n");
+            exit(EXIT_FAILURE);
+        }
         token = strtok(sentence, " ");
         next_token = token;
         while (next_token != NULL){
             printf("Token %d: %s\n", counter, token);
-
+            StorageArray[position] = token;
+            position++;
             if(next_token = strtok(NULL, " ")){
                 token = next_token;
             }
@@ -107,16 +114,9 @@ ExecuteCommand(line) char *line;
         }
         counter--;
         printf("Token %d: %s\n", counter, token);
-        /*Remove any remaining white space*/
-        //tmp = StripWhite(tmp);
-
-        /*Tokenize the rest of the character array until the terminal character*/
-        /*Effectively get the environment variable value to set*/
-        //tmp1 = strtok(NULL, "\0");
-        /*Remove any remaining white space*/
-        //tmp1 = StripWhite(tmp1);
-        /*Print result for visual debug*/
-        //printf("EVarVal to be set: %s\n", tmp1);
+        printf("StorageArray: %s\n", StorageArray[0]);
+        printf("StorageArray: %s\n", StorageArray[1]);
+        printf("StorageArray: %s\n", StorageArray[2]);
 
         pid_t pid;
         /*The command is external, so check if its prefixes with a / or a ., if so
@@ -132,7 +132,7 @@ ExecuteCommand(line) char *line;
                 printf("Complete Path Supplied.\n");
                 printf("Local PID %d\n", pid);
                 /*User is supplying the complete path.*/
-                execlp("bin/ls","ls", "-l", NULL);
+                execvp(StorageArray[0],StorageArray);
                 }
 
             else {
@@ -155,6 +155,7 @@ ExecuteCommand(line) char *line;
                 printf("Executable Name Supplied.\n");
                 printf("Local PID %d\n", pid);;
                 /*User is supplying the executable file name.*/
+                execvp(StorageArray[0],StorageArray);
             }
 
             else {
