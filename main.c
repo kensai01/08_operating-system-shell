@@ -50,6 +50,7 @@ int flagDot = 0;
 int flagSlash = 0;
 int flagInput = 0;
 int flagOutput = 0;
+int flagPipeInst = 0;
 
 
 int main(int argc, char **argv) {
@@ -89,11 +90,15 @@ char ExecuteCommand(line) char *line;
     char *sentence;
     // Second line for tokenization
     char *sentence1;
+    // Third line for tokenization
+    char *sentence2;
 
     /*Allocate space and copy over all the commands.*/
     sentence = malloc(255*sizeof(char));
     strcpy(sentence, line);
     sentence1 = malloc(255*sizeof(char));
+    strcpy(sentence1, line);
+    sentence2 = malloc(255*sizeof(char));
     strcpy(sentence1, line);
 
     /*Set the flag according to which external command first element user supplied, either '.' or '/' */
@@ -115,21 +120,72 @@ char ExecuteCommand(line) char *line;
     if(!Command)
     {
         /*Storage Arrays that will hold our broken up tokenized commands.*/
-        char **StorageArray = malloc(128 * sizeof(char*));
+        char **StorageSimpleExternalCmdArray = malloc(128 * sizeof(char*));
         char **StorageInArr = malloc(128 * sizeof(char*));
         char **StorageOutArr = malloc(128 * sizeof(char*));
-        char **StorageIOArguments = malloc(128 * sizeof(char*));
+        char **StorageParentArgs = malloc(128 * sizeof(char*));
+        char **StoragePipelined = malloc(128 * sizeof(char*));
+        char **StoragePipeChild = malloc(128 * sizeof(char*));
+        char **StoragePipeWholeChildCmd = malloc(128 * sizeof(char*));
 
         /*Ensure memory was allocated.*/
-        if (!StorageArray | !StorageInArr | !StorageOutArr | !StorageIOArguments) {
+        if (!StoragePipelined |
+                !StorageSimpleExternalCmdArray |
+                !StorageInArr |
+                !StorageOutArr |
+                !StorageParentArgs)
+        {
             fprintf(stderr, "Dynamic Memory Allocation Error.\n");
             exit(EXIT_FAILURE);
         }
         /*Initial tokenization based on space.*/
-        Tokenize(sentence, StorageArray, " ");
+        Tokenize(sentence, StorageSimpleExternalCmdArray, " ");
+        /*Runs if it's simple pipelining of normal external cmd, ie:
+         * ls -al | sort  */
+        if (flagPipeInst == 1 && flagInput == 0 && flagOutput == 0) {
+            /*Grab the arguments & command for child pipe.*/
+            Tokenize(sentence1, StoragePipeChild, "|");
+            Tokenize(StoragePipeChild[0], StorageParentArgs, " ");
+            Tokenize(StoragePipeChild[1], StoragePipeWholeChildCmd, " ");
 
+            /* What's left should be what is before the pipe line |.*/
+            /*Tokenize one more time, arguments to pass to execvp.*/
+            //Tokenize(sentence1, StorageParentArgs, " ");
+        }
+        /*Runs if we found i/o redirection and piping. ie:
+         * ls -al < infile | sort > outfile */
+        if (flagPipeInst == 1 && flagInput == 1 && flagOutput == 1){
+
+            /*Do another tokenization to seperate the things we need for o redirection.*/
+            Tokenize(sentence1, StoragePipelined, ">");
+
+            /*Grab the last element, should be the output file.*/
+            int ArrSize = sizeof(**StoragePipelined);
+            OutFileToken = StoragePipelined[ArrSize];
+            OutFileToken = StripWhite(OutFileToken);
+
+            /*Grab the arguments & command for child pipe.*/
+            Tokenize(sentence1, StoragePipeChild, "|");
+            Tokenize(StoragePipeChild[1], StoragePipeChild, " ");
+
+            /*Grab the entire child pipe (everything after the |)*/
+            Tokenize(sentence2, StoragePipeWholeChildCmd, "|");
+            Tokenize(StoragePipeWholeChildCmd[1],StoragePipeWholeChildCmd, " ");
+
+            /*Tokenize again to get the input file.*/
+            Tokenize(sentence1, StorageInArr, "<");
+
+            /*Grab the last element, should be the input file.*/
+            ArrSize = sizeof(**StorageInArr);
+            InputFileToken = StorageInArr[ArrSize];
+            InputFileToken = StripWhite(InputFileToken);
+
+            /*Tokenize one more time, what's left should be the arguments to pass to execvp.*/
+            Tokenize(sentence1, StorageParentArgs, " ");
+
+        }
         /*Runs if we found both input & output markers during first tokenization.*/
-        if (flagInput == 1 && flagOutput == 1){
+        if (flagInput == 1 && flagOutput == 1 && flagPipeInst == 0){
             /*Do another tokenization to seperate the things we need for i/o redirection.*/
             Tokenize(sentence1, StorageOutArr, ">");
             /*Grab the last element, should be the output file.*/
@@ -143,7 +199,7 @@ char ExecuteCommand(line) char *line;
             InputFileToken = StorageInArr[ArrSize];
             InputFileToken = StripWhite(InputFileToken);
             /*Tokenize one more time, what's left should be the arguments to pass to execvp.*/
-            Tokenize(sentence1, StorageIOArguments, " ");
+            Tokenize(sentence1, StorageParentArgs, " ");
         }
         /*If we only found input marker.*/
         if (flagInput == 1 && flagOutput == 0){
@@ -151,7 +207,7 @@ char ExecuteCommand(line) char *line;
             int ArrSize = sizeof(**StorageInArr);
             InputFileToken = StorageInArr[ArrSize];
             InputFileToken = StripWhite(InputFileToken);
-            Tokenize(sentence1, StorageIOArguments, " ");
+            Tokenize(sentence1, StorageParentArgs, " ");
         }
         /*If we only found output marker.*/
         if (flagInput == 0 && flagOutput == 1){
@@ -159,13 +215,15 @@ char ExecuteCommand(line) char *line;
             int ArrSize = sizeof(**StorageOutArr);
             OutFileToken = StorageOutArr[ArrSize];
             OutFileToken = StripWhite(OutFileToken);
-            Tokenize(sentence1, StorageIOArguments, " ");
+            Tokenize(sentence1, StorageParentArgs, " ");
         }
 
 
         /*If we're here, we're doing external commands - so we need a child process.
          * Create Child Process:*/
         pid_t pid;
+        pid_t pid2;
+        int pipefd[2];
         /*The command is external, so check if its prefixes with a / or a ., if so
         * the user is specifying a complete path to the executable file. Also
          * checks if we have input/output redirection.*/
@@ -180,10 +238,11 @@ char ExecuteCommand(line) char *line;
                 //printf("My PID is %d\n", getpid());
                 //printf("Complete Path Supplied.\n");
                 //printf("Local PID %d\n", pid);
-                execvp(StorageArray[0],StorageArray);
+                execvp(StorageSimpleExternalCmdArray[0],StorageSimpleExternalCmdArray);
             }
+
             /*I/O Redirection logic.*/
-            else if (pid == 0 && (flagInput == 1 || flagOutput == 1)) {
+            else if (pid == 0 && (flagInput == 1 || flagOutput == 1) && (flagPipeInst == 0)){
                 int InFile, OutFile;
                 /*Open Input & Output files.*/
                 InFile = open(InputFileToken, O_RDONLY);
@@ -195,7 +254,7 @@ char ExecuteCommand(line) char *line;
                 close(InFile);
                 close(OutFile);
 
-                execvp(StorageIOArguments[0],StorageIOArguments);
+                execvp(StorageParentArgs[0],StorageParentArgs);
             }
 
             else {
@@ -208,8 +267,58 @@ char ExecuteCommand(line) char *line;
                 /*Reset the i/o markers*/
                 flagInput = 0;
                 flagOutput = 0;
+                /*Reset External Command markers.*/
+                flagDot = 0;
+                flagSlash = 0;
+                flagPipeInst = 0;
                 return 0;
             }
+        }
+        if (flagPipeInst == 1){
+            pipe(pipefd);
+
+            if ((pid = fork()) == -1) {
+                fprintf(stderr, "Fork Failed!\n");
+                return 1;
+            }
+
+            if ((pid2 = fork()) == -1) {
+                fprintf(stderr, "Fork Failed!\n");
+                return 1;
+            }
+
+            if (pid == 0 && pid2 > 0){
+                printf("Child-1");
+                dup2(pipefd[0], STDIN_FILENO);
+                close(pipefd[1]);
+                execvp(StoragePipeChild[0], StoragePipeWholeChildCmd);
+            }
+            int status;
+            while(waitpid(pid, &status, WUNTRACED | WCONTINUED) > 0);
+
+
+            if (pid2 == 0 && pid > 0){
+                printf("Child-2");
+                dup2(pipefd[1], STDOUT_FILENO);
+                close(pipefd[0]);
+                execvp(StorageParentArgs[0], StorageParentArgs);
+            }
+            flagPipeInst = 0;
+
+            while (wait(&status) > 0)
+
+                if(pid2 >0 && pid>0){
+                    printf("\n");
+                }
+
+                //printf("My PID is %d\n", getpid());
+                //printf("Local PID %d\n", pid);
+                //int cs;
+                wait(&status);
+                printf("Child Process Complete. Status %d\n", status);
+                flagPipeInst = 0;
+                return 0;
+
         }
             /*Simple external command that is not I/O redirect & not a . or / prefixed command.
              * ie. ls -al or sort ...*/
@@ -224,7 +333,7 @@ char ExecuteCommand(line) char *line;
                 //printf("Executable Name Supplied.\n");
                 //printf("Local PID %d\n", pid);;
                 /*User is supplying the executable file name.*/
-                execvp(StorageArray[0],StorageArray);
+                execvp(StorageSimpleExternalCmdArray[0],StorageSimpleExternalCmdArray);
             }
 
             else {
@@ -367,6 +476,9 @@ void Tokenize(char *sentence, char** StorageArray, char * delimiter)
         /*Check for input / output markers*/
         if(strcmp(StorageArray[position], "<") == 0){ flagInput = 1; printf("< was located!.\n");}
         if(strcmp(StorageArray[position], ">") == 0){ flagOutput = 1; printf("> was located!.\n");}
+
+        /*Check for pipeline instructions.*/
+        if(strcmp(StorageArray[position], "|") == 0){ flagPipeInst = 1; printf("| was located!.\n");}
 
         position++;
         if((next_token = strtok(NULL, delimiter))){
