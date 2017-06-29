@@ -12,7 +12,7 @@
 #include <readline/readline.h>
 #include <readline/history.h>
 
-/* Functions that will edit our environment variables. */
+/* Functions that will edit our environment variables & launch internal commands. */
 int SetCommand(), DeleteCommand(), PrintCommand(), PwdCommand(), ChangeDirCommand(), QuitCommand();
 
 /*Structure which will contain the programs for the environment manipulation.*/
@@ -33,10 +33,10 @@ COMMAND Commands[] = {
 
 /*fwd declarations*/
 char *StripWhite(char*);
-COMMAND *FindCommand();
+COMMAND *FindCommand(char*);
 char ExecuteCommand(char*);
 void Tokenize(char *s, char** arr, char * delimiter);
-int internal_command(char **arr, int arr_size);
+
 /*void handler(int signal) {
     // call kill function
     // call printf function
@@ -60,8 +60,6 @@ int main(int argc, char **argv) {
         if(quitFlag == 0) {
             line = StripWhite(s);
             add_history(line);
-            //char * arr[100];
-            //tokenize(line, arr, &arr_size, " ");
             ExecuteCommand(line);
             /* clean up! */
             free(s);
@@ -82,12 +80,21 @@ char ExecuteCommand(line) char *line;
     // Holds external command prefix
     char externalCmdPrefix = line[0];
 
+    // output file token
+    char * OutFileToken;
+    // input file token
+    char * InputFileToken;
+
     // Initial line for tokenization
     char *sentence;
+    // Second line for tokenization
+    char *sentence1;
 
     /*Allocate space and copy over all the commands.*/
     sentence = malloc(255*sizeof(char));
     strcpy(sentence, line);
+    sentence1 = malloc(255*sizeof(char));
+    strcpy(sentence1, line);
 
     /*Set the flag according to which external command first element user supplied, either '.' or '/' */
     if (externalCmdPrefix == '.') { flagDot = 1; printf("Dot Flag Set\n");}
@@ -107,35 +114,89 @@ char ExecuteCommand(line) char *line;
     /*If the command supplied is NOT internal, do the external commands logic.*/
     if(!Command)
     {
-        /*Storage Array that will hold our broken up tokenized command.*/
+        /*Storage Arrays that will hold our broken up tokenized commands.*/
         char **StorageArray = malloc(128 * sizeof(char*));
+        char **StorageInArr = malloc(128 * sizeof(char*));
+        char **StorageOutArr = malloc(128 * sizeof(char*));
+        char **StorageIOArguments = malloc(128 * sizeof(char*));
 
         /*Ensure memory was allocated.*/
-        if (!StorageArray) {
+        if (!StorageArray | !StorageInArr | !StorageOutArr | !StorageIOArguments) {
             fprintf(stderr, "Dynamic Memory Allocation Error.\n");
             exit(EXIT_FAILURE);
         }
         /*Initial tokenization based on space.*/
         Tokenize(sentence, StorageArray, " ");
 
+        /*Runs if we found both input & output markers during first tokenization.*/
+        if (flagInput == 1 && flagOutput == 1){
+            /*Do another tokenization to seperate the things we need for i/o redirection.*/
+            Tokenize(sentence1, StorageOutArr, ">");
+            /*Grab the last element, should be the output file.*/
+            int ArrSize = sizeof(**StorageOutArr);
+            OutFileToken = StorageOutArr[ArrSize];
+            OutFileToken = StripWhite(OutFileToken);
+            /*Tokenize again to get the input file.*/
+            Tokenize(sentence1, StorageInArr, "<");
+            /*Grab the last element, should be the input file.*/
+            ArrSize = sizeof(**StorageInArr);
+            InputFileToken = StorageInArr[ArrSize];
+            InputFileToken = StripWhite(InputFileToken);
+            /*Tokenize one more time, what's left should be the arguments to pass to execvp.*/
+            Tokenize(sentence1, StorageIOArguments, " ");
+        }
+        /*If we only found input marker.*/
+        if (flagInput == 1 && flagOutput == 0){
+            Tokenize(sentence1, StorageInArr, "<");
+            int ArrSize = sizeof(**StorageInArr);
+            InputFileToken = StorageInArr[ArrSize];
+            InputFileToken = StripWhite(InputFileToken);
+            Tokenize(sentence1, StorageIOArguments, " ");
+        }
+        /*If we only found output marker.*/
+        if (flagInput == 0 && flagOutput == 1){
+            Tokenize(sentence1, StorageOutArr, ">");
+            int ArrSize = sizeof(**StorageOutArr);
+            OutFileToken = StorageOutArr[ArrSize];
+            OutFileToken = StripWhite(OutFileToken);
+            Tokenize(sentence1, StorageIOArguments, " ");
+        }
+
+
         /*If we're here, we're doing external commands - so we need a child process.
          * Create Child Process:*/
         pid_t pid;
         /*The command is external, so check if its prefixes with a / or a ., if so
-        * the user is specifying a complete path to the executable file. */
-        if (flagSlash == 1 || flagDot == 1) {
+        * the user is specifying a complete path to the executable file. Also
+         * checks if we have input/output redirection.*/
+        if (flagSlash == 1 || flagDot == 1 || flagInput == 1 || flagOutput == 1) {
             pid = fork();
             if (pid < 0){
                 printf("Fork Failed\n");
                 return 1;
                 }
-            else if (pid == 0) {
+                /*No I/O Redirection, supplying complete path starting with . or / */
+            else if (pid == 0 && (flagSlash == 1 || flagDot == 1)) {
                 //printf("My PID is %d\n", getpid());
                 //printf("Complete Path Supplied.\n");
                 //printf("Local PID %d\n", pid);
-                /*User is supplying the complete path.*/
                 execvp(StorageArray[0],StorageArray);
-                }
+            }
+            /*I/O Redirection logic.*/
+            else if (pid == 0 && (flagInput == 1 || flagOutput == 1)) {
+                int InFile, OutFile;
+                /*Open Input & Output files.*/
+                InFile = open(InputFileToken, O_RDONLY);
+                OutFile = open(OutFileToken, O_WRONLY | O_TRUNC | O_CREAT, S_IRUSR | S_IRGRP | S_IWGRP | S_IWUSR);
+                /*Replace file descriptors /w dup2.*/
+                dup2(InFile, STDIN_FILENO);
+                dup2(OutFile, STDOUT_FILENO);
+                /*Close open files.*/
+                close(InFile);
+                close(OutFile);
+
+                execvp(StorageIOArguments[0],StorageIOArguments);
+            }
 
             else {
                 //printf("My PID is %d\n", getpid());
@@ -143,9 +204,15 @@ char ExecuteCommand(line) char *line;
                 int cs;
                 wait(&cs);
                 printf("Child Process Complete. Status %d\n", cs);
+
+                /*Reset the i/o markers*/
+                flagInput = 0;
+                flagOutput = 0;
                 return 0;
             }
         }
+            /*Simple external command that is not I/O redirect & not a . or / prefixed command.
+             * ie. ls -al or sort ...*/
         else {
             pid = fork();
             if (pid < 0){
@@ -157,7 +224,6 @@ char ExecuteCommand(line) char *line;
                 //printf("Executable Name Supplied.\n");
                 //printf("Local PID %d\n", pid);;
                 /*User is supplying the executable file name.*/
-
                 execvp(StorageArray[0],StorageArray);
             }
 
@@ -173,9 +239,7 @@ char ExecuteCommand(line) char *line;
     }
 
     while (whitespace (line[EachLetter])) EachLetter++;
-
     WholeWord = line + EachLetter;
-
     return ((*(Command->func)) (WholeWord));
 }
 
@@ -183,9 +247,8 @@ char ExecuteCommand(line) char *line;
 
 /*Look up command name, return null ptr if none was found otherwise
  * return the pointer to the command.*/
-COMMAND * FindCommand(Name)
-        char *Name; {
-    register int CommandNum;
+COMMAND * FindCommand(Name) char *Name; {
+        register int CommandNum;
 
         for (CommandNum = 0; Commands[CommandNum].name; CommandNum++) {
             if (strcmp(Name, Commands[CommandNum].name) == 0) return (&Commands[CommandNum]);
@@ -295,7 +358,7 @@ void Tokenize(char *sentence, char** StorageArray, char * delimiter)
     char *token;
     char *next_token;
     int counter = 1, position = 0;
-    token = strtok(sentence, " ");
+    token = strtok(sentence, delimiter);
     next_token = token;
     while (next_token != NULL){
         printf("Token %d: %s\n", counter, token);
@@ -306,7 +369,7 @@ void Tokenize(char *sentence, char** StorageArray, char * delimiter)
         if(strcmp(StorageArray[position], ">") == 0){ flagOutput = 1; printf("> was located!.\n");}
 
         position++;
-        if((next_token = strtok(NULL, " "))){
+        if((next_token = strtok(NULL, delimiter))){
             token = next_token;
         }
         counter++;
@@ -316,32 +379,8 @@ void Tokenize(char *sentence, char** StorageArray, char * delimiter)
     //printf("StorageArray: %s\n", StorageArray[0]);
     //printf("StorageArray: %s\n", StorageArray[1]);
     //printf("StorageArray: %s\n", StorageArray[2]);
-
-    /*For task 4 need to tokenize twice, example:
-     * sort -a < infile > outfile
-     * use < and > as delimiter twice
-     * first tokenization:
-     * arr[0] = sort -a < infile
-     * arr[1] = outfile
-     * second tokenization:
-     * arr[0] = sort -a
-     * arr[1] = infile
-     *
-     * STDOUT_FILENO --> outfile
-     * STDIN_FILENO <-- infile
-     * infile
-     * outfile
-     * dup2() -> Make sure to do the redirection for a child process, not the parent process!*/
 }
 
-int internal_command(char **arr, int arr_size) {
-    //int done = 0;
-    //if it's zero, they are the same
-    //if(strcmp(arr[0], "set") == 0){
-    //    done = 1;
-    //}
-    return 0;
-}
 
 
 
