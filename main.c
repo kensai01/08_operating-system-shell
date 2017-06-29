@@ -7,6 +7,7 @@
 #include <sys/stat.h>
 #include <sys/errno.h>
 #include <sys/wait.h>
+#include <stdbool.h>
 
 #include <readline/readline.h>
 #include <readline/history.h>
@@ -33,22 +34,34 @@ COMMAND Commands[] = {
 /*fwd declarations*/
 char *StripWhite(char*);
 COMMAND *FindCommand();
-
-/* Simple example of using gnu readline to get lines of input from a user.
-Needs to be linked with -lreadline -lcurses add_history tells the readline
-library to add the line to it's internal history, so that using up-arrow (or ^p)
-will allows the user to see/edit previous lines. */
+char ExecuteCommand(char*);
+void Tokenize(char *s, char** arr, char * delimiter);
+int internal_command(char **arr, int arr_size);
+/*void handler(int signal) {
+    // call kill function
+    // call printf function
+}*/
 
 /*Using quit flag to give us a chance to clean up after ourselves. Otherwise
  * prog would quit right from the quit function and free(s) would never get to run again.*/
 int quitFlag = 0;
+/* Flags for the external commands. */
+int flagDot = 0;
+int flagSlash = 0;
+int flagInput = 0;
+int flagOutput = 0;
+
 
 int main(int argc, char **argv) {
+
+    //signal(SIGINT, handler);
     char *s, *line;
-    while (s=readline("prompt> ")){
+    while ((s=readline("prompt> "))){
         if(quitFlag == 0) {
             line = StripWhite(s);
             add_history(line);
+            //char * arr[100];
+            //tokenize(line, arr, &arr_size, " ");
             ExecuteCommand(line);
             /* clean up! */
             free(s);
@@ -59,65 +72,54 @@ int main(int argc, char **argv) {
     }
 }
 
-/*Execute a command line. */
-ExecuteCommand(line) char *line;
+/*Executes a command. */
+char ExecuteCommand(line) char *line;
 {
+    /*Set up needed variables*/
     register int EachLetter;
     COMMAND *Command;
     char *WholeWord;
-    //printf("line: %c\n", line[0]);
-    printf("WholeWord: %s\n", line);
-    char this = line[0];
-    int flagDot = 0;
-    int flagSlash = 0;
+    // Holds external command prefix
+    char externalCmdPrefix = line[0];
+
+    // Initial line for tokenization
     char *sentence;
+
+    /*Allocate space and copy over all the commands.*/
     sentence = malloc(255*sizeof(char));
     strcpy(sentence, line);
-    printf("%s\n", sentence);
 
-    /*Set the flag according to which external command first element user supplied */
-    if (this == '.') { flagDot = 1; printf("Dot Flag Set\n");}
-    if (this == '/') { flagSlash = 1; printf("Slash Flag Set\n");}
+    /*Set the flag according to which external command first element user supplied, either '.' or '/' */
+    if (externalCmdPrefix == '.') { flagDot = 1; printf("Dot Flag Set\n");}
+    if (externalCmdPrefix == '/') { flagSlash = 1; printf("Slash Flag Set\n");}
 
-    /*Isolate the command word from the rest of the message.*/
+    /*Isolate the internal command word from the rest of the message.
+     * Used for internal commands. */
     EachLetter = 0;
     while (line[EachLetter] && whitespace(line[EachLetter])) EachLetter++;
     WholeWord = line + EachLetter;
-
     while (line[EachLetter] && !whitespace(line[EachLetter])) EachLetter++;
-
     if (line[EachLetter]) line[EachLetter++] = '\0';
 
+    /*Try to find the internal command word in the available list internal commands.*/
     Command = FindCommand(WholeWord);
-    /*Check to see if command supplied is internal or external.*/
+
+    /*If the command supplied is NOT internal, do the external commands logic.*/
     if(!Command)
     {
-        char *token;
-        char *next_token;
-        int counter = 1, position = 0;
+        /*Storage Array that will hold our broken up tokenized command.*/
         char **StorageArray = malloc(128 * sizeof(char*));
 
+        /*Ensure memory was allocated.*/
         if (!StorageArray) {
             fprintf(stderr, "Dynamic Memory Allocation Error.\n");
             exit(EXIT_FAILURE);
         }
-        token = strtok(sentence, " ");
-        next_token = token;
-        while (next_token != NULL){
-            printf("Token %d: %s\n", counter, token);
-            StorageArray[position] = token;
-            position++;
-            if(next_token = strtok(NULL, " ")){
-                token = next_token;
-            }
-            counter++;
-        }
-        counter--;
-        printf("Token %d: %s\n", counter, token);
-        printf("StorageArray: %s\n", StorageArray[0]);
-        printf("StorageArray: %s\n", StorageArray[1]);
-        printf("StorageArray: %s\n", StorageArray[2]);
+        /*Initial tokenization based on space.*/
+        Tokenize(sentence, StorageArray, " ");
 
+        /*If we're here, we're doing external commands - so we need a child process.
+         * Create Child Process:*/
         pid_t pid;
         /*The command is external, so check if its prefixes with a / or a ., if so
         * the user is specifying a complete path to the executable file. */
@@ -128,16 +130,16 @@ ExecuteCommand(line) char *line;
                 return 1;
                 }
             else if (pid == 0) {
-                printf("My PID is %d\n", getpid());
-                printf("Complete Path Supplied.\n");
-                printf("Local PID %d\n", pid);
+                //printf("My PID is %d\n", getpid());
+                //printf("Complete Path Supplied.\n");
+                //printf("Local PID %d\n", pid);
                 /*User is supplying the complete path.*/
                 execvp(StorageArray[0],StorageArray);
                 }
 
             else {
-                printf("My PID is %d\n", getpid());
-                printf("Local PID %d\n", pid);
+                //printf("My PID is %d\n", getpid());
+                //printf("Local PID %d\n", pid);
                 int cs;
                 wait(&cs);
                 printf("Child Process Complete. Status %d\n", cs);
@@ -151,16 +153,17 @@ ExecuteCommand(line) char *line;
                 return 1;
             }
             else if (pid == 0) {
-                printf("My PID is %d\n", getpid());
-                printf("Executable Name Supplied.\n");
-                printf("Local PID %d\n", pid);;
+                //printf("My PID is %d\n", getpid());
+                //printf("Executable Name Supplied.\n");
+                //printf("Local PID %d\n", pid);;
                 /*User is supplying the executable file name.*/
+
                 execvp(StorageArray[0],StorageArray);
             }
 
             else {
-                printf("My PID is %d\n", getpid());
-                printf("Local PID %d\n", pid);
+                //printf("My PID is %d\n", getpid());
+                //printf("Local PID %d\n", pid);
                 int cs;
                 wait(&cs);
                 printf("Child Process Complete. Status %d\n", cs);
@@ -175,6 +178,8 @@ ExecuteCommand(line) char *line;
 
     return ((*(Command->func)) (WholeWord));
 }
+
+
 
 /*Look up command name, return null ptr if none was found otherwise
  * return the pointer to the command.*/
@@ -202,7 +207,7 @@ char * StripWhite(string) char *string; {
 }
 
 /* Set the value of the environment variable to the value specified.*/
-SetCommand(arg) char *arg;{
+int SetCommand(arg) char *arg;{
     //local variables to parse the incoming character array
     char *tmp,*tmp1;
 
@@ -232,7 +237,7 @@ SetCommand(arg) char *arg;{
 }
 
 /* Delete the named environment variable. */
-DeleteCommand(arg) char *arg;{
+int DeleteCommand(arg) char *arg;{
     char *x;
     x = getenv(arg);
     printf("Environment Variable to be Deleted: %s\n", arg);
@@ -248,7 +253,7 @@ DeleteCommand(arg) char *arg;{
 }
 
 /*Print the named environment variable. */
-PrintCommand(arg) char *arg;{
+int PrintCommand(arg) char *arg;{
     char *x;
     x = getenv(arg);
     printf("Environment Variable Name: %s\n", arg);
@@ -256,7 +261,7 @@ PrintCommand(arg) char *arg;{
     return 1;
 }
 
-PwdCommand(arg) char *arg; {
+int PwdCommand(arg) char *arg; {
     char Directory[2048], *DirectoryString;
     DirectoryString = getcwd(Directory, 2048);
     if (DirectoryString == 0){
@@ -266,7 +271,7 @@ PwdCommand(arg) char *arg; {
     return 0;
 }
 
-ChangeDirCommand(arg) char *arg; {
+int ChangeDirCommand(arg) char *arg; {
     /*Ensure that we don't get an error back when changing directories.*/
     if (chdir(arg) == -1){
         perror(arg);
@@ -279,8 +284,64 @@ ChangeDirCommand(arg) char *arg; {
 }
 
 /*Sets the quit flag on so that the program can clean up and exit.*/
-QuitCommand(arg) char *arg; {
+int QuitCommand(arg) char *arg; {
     /*Set the quit flag on.*/
     quitFlag = 1;
     return 0;
 }
+
+void Tokenize(char *sentence, char** StorageArray, char * delimiter)
+{
+    char *token;
+    char *next_token;
+    int counter = 1, position = 0;
+    token = strtok(sentence, " ");
+    next_token = token;
+    while (next_token != NULL){
+        printf("Token %d: %s\n", counter, token);
+        StorageArray[position] = token;
+
+        /*Check for input / output markers*/
+        if(strcmp(StorageArray[position], "<") == 0){ flagInput = 1; printf("< was located!.\n");}
+        if(strcmp(StorageArray[position], ">") == 0){ flagOutput = 1; printf("> was located!.\n");}
+
+        position++;
+        if((next_token = strtok(NULL, " "))){
+            token = next_token;
+        }
+        counter++;
+    }
+    counter--;
+    //printf("Token %d: %s\n", counter, token);
+    //printf("StorageArray: %s\n", StorageArray[0]);
+    //printf("StorageArray: %s\n", StorageArray[1]);
+    //printf("StorageArray: %s\n", StorageArray[2]);
+
+    /*For task 4 need to tokenize twice, example:
+     * sort -a < infile > outfile
+     * use < and > as delimiter twice
+     * first tokenization:
+     * arr[0] = sort -a < infile
+     * arr[1] = outfile
+     * second tokenization:
+     * arr[0] = sort -a
+     * arr[1] = infile
+     *
+     * STDOUT_FILENO --> outfile
+     * STDIN_FILENO <-- infile
+     * infile
+     * outfile
+     * dup2() -> Make sure to do the redirection for a child process, not the parent process!*/
+}
+
+int internal_command(char **arr, int arr_size) {
+    //int done = 0;
+    //if it's zero, they are the same
+    //if(strcmp(arr[0], "set") == 0){
+    //    done = 1;
+    //}
+    return 0;
+}
+
+
+
