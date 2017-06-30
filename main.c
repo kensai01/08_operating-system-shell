@@ -56,7 +56,7 @@ int main(int argc, char **argv) {
 
     if(signal(SIGINT, sigintHandler) == SIG_ERR)
     {
-        printf("Failed to register interrupts with kernell\n");
+        printf("Failed to register interrupts with kernel.\n");
     }
 
     while (sigsetjmp(ctrlc_buf, 1) != 0);
@@ -68,7 +68,7 @@ int main(int argc, char **argv) {
             add_history(line);
             ExecuteCommand(line);
             /* clean up! */
-            free(s);
+            free(line);
         }
         if(quitFlag == 1){
             exit(0);
@@ -86,7 +86,8 @@ void sigintHandler(int sig_num)
 /*Executes a command. */
 char ExecuteCommand(line) char *line;
 {
-    /*Set up needed variables*/
+    /**General Variable Setup for generation of tokens & argument storage.**/
+
     register int EachLetter;
     COMMAND *Command;
     char *WholeWord;
@@ -125,9 +126,11 @@ char ExecuteCommand(line) char *line;
     while (line[EachLetter] && !whitespace(line[EachLetter])) EachLetter++;
     if (line[EachLetter]) line[EachLetter++] = '\0';
 
+    /**Internal Commands flow here**/
     /*Try to find the internal command word in the available list internal commands.*/
     Command = FindCommand(WholeWord);
 
+    /**External Commands flow here**/
     /*If the command supplied is NOT internal, do the external commands logic.*/
     if(!Command)
     {
@@ -150,8 +153,11 @@ char ExecuteCommand(line) char *line;
             fprintf(stderr, "Dynamic Memory Allocation Error.\n");
             return 1;
         }
+
+        /**Tokenization START**/
         /*Initial tokenization based on space.*/
         Tokenize(sentence, StorageSimpleExternalCmdArray, " ");
+
         /*Runs if it's simple pipelining of normal external cmd, ie:
          * ls -al | sort  */
         if (flagPipeInst == 1 && flagInput == 0 && flagOutput == 0) {
@@ -195,6 +201,8 @@ char ExecuteCommand(line) char *line;
             /*Tokenize one more time, what's left should be the arguments to pass to execvp.*/
             Tokenize(sentence1, StorageParentArgs, " ");
 
+            //printf("Input File Token: %s\n", InputFileToken);
+            //printf("Output File Token: %s\n", OutFileToken);
         }
         /*Runs if we found both input & output markers during first tokenization.*/
         /* ie: sort < infile > outfile */
@@ -216,7 +224,7 @@ char ExecuteCommand(line) char *line;
         }
         /*If we only found input marker.*/
         /*ie: sort < foo*/
-        if (flagInput == 1 && flagOutput == 0){
+        if (flagInput == 1 && flagOutput == 0 && flagPipeInst == 0){
             Tokenize(sentence1, StorageInArr, "<");
             int ArrSize = sizeof(**StorageInArr);
             InputFileToken = StorageInArr[ArrSize];
@@ -225,20 +233,21 @@ char ExecuteCommand(line) char *line;
         }
         /*If we only found output marker.*/
         /* ls > save for example..*/
-        if (flagInput == 0 && flagOutput == 1){
+        if (flagInput == 0 && flagOutput == 1 && flagPipeInst == 0){
             Tokenize(sentence1, StorageOutArr, ">");
             int ArrSize = sizeof(**StorageOutArr);
             OutFileToken = StorageOutArr[ArrSize];
             OutFileToken = StripWhite(OutFileToken);
             Tokenize(sentence1, StorageParentArgs, " ");
         }
+        /**Tokenization END**/
 
-
-        /*If we're here, we're doing external commands - so we need a child process.
-         * Create Child Process:*/
+        /**External commands START**/
+        /*Setup of external command variables*/
         pid_t pid;
         pid_t pid2;
         int pipefd[2];
+
         /*The command is external, so check if its prefixes with a / or a ., if so
         * the user is specifying a complete path to the executable file. Also
          * checks if we have input/output redirection.*/
@@ -248,9 +257,9 @@ char ExecuteCommand(line) char *line;
                 printf("ERROR: %s\n", strerror(errno));
                 return 1;
                 }
-                /*No I/O Redirection, supplying complete path starting with . or / */
+            /**Complete file path**/
+            /*No I/O Redirection, supplying complete path starting with . or / */
             else if (pid == 0 && (flagSlash == 1 || flagDot == 1)) {
-
                 if((execvp(StorageSimpleExternalCmdArray[0],StorageSimpleExternalCmdArray)) == -1)
                 {
                     printf("ERROR: %s\n", strerror(errno));
@@ -258,7 +267,7 @@ char ExecuteCommand(line) char *line;
                 return 1;
             }
 
-            /*I/O Redirection logic.*/
+            /**I/O Redirection logic.**/
             else if (pid == 0 && (flagInput == 1 && flagOutput == 1) && (flagPipeInst == 0)){
                 int InFile, OutFile;
                 /*Open Input & Output files.*/
@@ -287,8 +296,14 @@ char ExecuteCommand(line) char *line;
                     return 1;
                 }
                 /*Close open files.*/
-                close(InFile);
-                close(OutFile);
+                if(close(InFile) == -1){
+                    printf("ERROR: %s\n", strerror(errno));
+                    return 1;
+                }
+                if(close(OutFile) == -1){
+                    printf("ERROR: %s\n", strerror(errno));
+                    return 1;
+                }
 
                 if ((execvp(StorageParentArgs[0],StorageParentArgs)) == -1){
                     printf("ERROR: %s\n", strerror(errno));
@@ -308,7 +323,10 @@ char ExecuteCommand(line) char *line;
                     return 1;
                 }
                 /*Close open files.*/
-                close(InFile);
+                if (close(InFile) == -1){
+                    printf("ERROR: %s\n", strerror(errno));
+                    return 1;
+                }
 
                 if ((execvp(StorageParentArgs[0],StorageParentArgs)) == -1){
                     printf("ERROR: %s\n", strerror(errno));
@@ -335,7 +353,10 @@ char ExecuteCommand(line) char *line;
                     return 1;
                 }
                 /*Close open files.*/
-                close(OutFile);
+                if(close(OutFile) == -1){
+                    printf("ERROR: %s\n", strerror(errno));
+                    return 1;
+                }
 
                 if ((execvp(StorageParentArgs[0],StorageParentArgs)) == -1){
                     printf("ERROR: %s\n", strerror(errno));
@@ -344,12 +365,11 @@ char ExecuteCommand(line) char *line;
             }
 
             else {
-                //printf("My PID is %d\n", getpid());
-                //printf("Local PID %d\n", pid);
                 int cs;
-                wait(&cs);
-                printf("Child Process Complete. Status %d\n", cs);
-
+                if(wait(&cs) == -1){
+                    printf("ERROR: %s\n", strerror(errno));
+                    return 1;
+                }
                 /*Reset the i/o markers*/
                 flagInput = 0;
                 flagOutput = 0;
@@ -360,78 +380,137 @@ char ExecuteCommand(line) char *line;
                 return 0;
             }
         }
+
+        /**Piping Logic**/
         if (flagPipeInst == 1){
-            pipe(pipefd);
-
+            /*Create the pipe.*/
+            if (pipe(pipefd) == -1){
+                printf("ERROR: %s\n", strerror(errno));
+                return 1;
+            }
+            /*Ensure process forks.*/
             if ((pid = fork()) == -1) {
-                fprintf(stderr, "Fork Failed!\n");
+                printf("ERROR: %s\n", strerror(errno));
                 return 1;
             }
+            /*Piping w/o i/o redirection, run first child.
+             * ie: ls -al | sort for example. */
+            if (pid == 0 && pid2 > 0 && flagInput == 0 && flagOutput == 0){
+                /*Replace stdin with input part of pipe.*/
+                if(dup2(pipefd[0], STDIN_FILENO) == -1){
+                    printf("ERROR: %s\n", strerror(errno));
+                    return 1;
+                }
+                /*Close the other pipe.*/
+                if (close(pipefd[1]) == -1)
+                {
+                    printf("ERROR: %s\n", strerror(errno));
+                    return 1;
+                }
+                /*Execute the first pipe.*/
+                if(execvp(StoragePipeChild[0], StoragePipeWholeChildCmd) == -1){
+                    printf("ERROR: %s\n", strerror(errno));
+                    return 1;
+                }
+            }
+            /*Piping with input redirection, run first child.
+             * ie: ls -al < infile | cat for example.*/
+            //TODO implement piping /w input redirection
 
-            if ((pid2 = fork()) == -1) {
-                fprintf(stderr, "Fork Failed!\n");
-                return 1;
+            else if (pid == 0 && pid2 > 0 && flagInput == 1 && flagOutput == 1){
+                /*int InFile;
+                *//*Open Input & Output files.*//*
+                if ((InFile = open(InputFileToken, O_RDONLY)) == -1){
+                    printf("ERROR: %s\n", strerror(errno));
+                    return 1;
+                }
+                *//*Replace file descriptors /w dup2.*//*
+                if ((dup2(InFile, STDIN_FILENO)) == -1){
+                    printf("ERROR: %s\n", strerror(errno));
+                    return 1;
+                }
+                *//*Close open files.*//*
+                close(InFile);*/
             }
 
-            if (pid == 0 && pid2 > 0){
-                printf("Child-1");
-                dup2(pipefd[0], STDIN_FILENO);
-                close(pipefd[1]);
-                execvp(StoragePipeChild[0], StoragePipeWholeChildCmd);
-            }
+            /*Piping with output redirection, run first child.
+             * ie: ls -al | sort > outfile for example.*/
+            //TODO implement piping /w output redirection
+
+            /*Piping with Input & Output redirection, run first child.
+            * ie: ls -al < infile | sort > outfile for example.*/
+            //TODO implement piping /w input & output redirection
+
             int status;
             while(waitpid(pid, &status, WUNTRACED | WCONTINUED) > 0);
 
-
-            if (pid2 == 0 && pid > 0){
-                printf("Child-2");
-                dup2(pipefd[1], STDOUT_FILENO);
-                close(pipefd[0]);
-                execvp(StorageParentArgs[0], StorageParentArgs);
+            /*Ensure process forks.*/
+            if ((pid2 = fork()) == -1) {
+                printf("ERROR: %s\n", strerror(errno));
+                return 1;
             }
+            /*Piping w/o i/o redirection, run second child.
+             * ie: ls -al | sort for example. */
+            if (pid2 == 0 && pid > 0){
+                if(dup2(pipefd[1], STDOUT_FILENO) == -1)
+                {
+                    printf("ERROR: %s\n", strerror(errno));
+                    return 1;
+                }
+                if (close(pipefd[0]) == -1){
+                    printf("ERROR: %s\n", strerror(errno));
+                    return 1;
+                }
+
+                if(execvp(StorageParentArgs[0], StorageParentArgs) == -1)
+                {
+                    printf("ERROR: %s\n", strerror(errno));
+                    return 1;
+                }
+            }
+            /*Reset piping flag.*/
             flagPipeInst = 0;
 
+            /* Wait for child processes to finish */
             while (wait(&status) > 0)
-
                 if(pid2 >0 && pid>0){
                     printf("\n");
                 }
-
-                //printf("My PID is %d\n", getpid());
-                //printf("Local PID %d\n", pid);
-                //int cs;
-                wait(&status);
-                printf("Child Process Complete. Status %d\n", status);
+                if (wait(&status) == -1){
+                    printf("ERROR: %s\n", strerror(errno));
+                    return 1;
+                }
                 flagPipeInst = 0;
                 return 0;
         }
-            /*Simple external command that is not I/O redirect & not a . or / prefixed command.
-             * ie. ls -al or sort ...*/
+        /**Simple external cmd**/
+        /*Simple external command that is not I/O redirect & not a . or / prefixed command.
+         * ie. ls -al or sort ...*/
         else {
             pid = fork();
             if (pid < 0){
-                printf("Fork Failed\n");
+                printf("ERROR: %s\n", strerror(errno));
                 return 1;
             }
             else if (pid == 0) {
-                //printf("My PID is %d\n", getpid());
-                //printf("Executable Name Supplied.\n");
-                //printf("Local PID %d\n", pid);;
                 /*User is supplying the executable file name.*/
-                execvp(StorageSimpleExternalCmdArray[0],StorageSimpleExternalCmdArray);
+                if(execvp(StorageSimpleExternalCmdArray[0],StorageSimpleExternalCmdArray) == -1){
+                    printf("ERROR: %s\n", strerror(errno));
+                    return 1;
+                }
             }
-
             else {
-                //printf("My PID is %d\n", getpid());
-                //printf("Local PID %d\n", pid);
                 int cs;
-                wait(&cs);
-                printf("Child Process Complete. Status %d\n", cs);
+                if(wait(&cs) == -1){
+                    printf("ERROR: %s\n", strerror(errno));
+                    return 1;
+                }
                 return 0;
             }
         }
     }
 
+    /*Internal Commands return here.*/
     while (whitespace (line[EachLetter])) EachLetter++;
     WholeWord = line + EachLetter;
     return ((*(Command->func)) (WholeWord));
@@ -443,12 +522,10 @@ char ExecuteCommand(line) char *line;
  * return the pointer to the command.*/
 COMMAND * FindCommand(Name) char *Name; {
         register int CommandNum;
-
         for (CommandNum = 0; Commands[CommandNum].name; CommandNum++) {
             if (strcmp(Name, Commands[CommandNum].name) == 0) return (&Commands[CommandNum]);
         }
         return ((COMMAND *) NULL);
-
 }
 
 /*Strip white space
@@ -467,7 +544,6 @@ char * StripWhite(string) char *string; {
 int SetCommand(arg) char *arg;{
     //local variables to parse the incoming character array
     char *tmp,*tmp1;
-
     /*Tokenize the char array to delimit at the equals sign*/
     /*Effectively getting the name of the environment variable to set*/
     tmp = strtok(arg, "=");
@@ -483,20 +559,24 @@ int SetCommand(arg) char *arg;{
     /*Print result for visual debug*/
     printf("EVarVal to be set: %s\n", tmp1);
     /*Set environment variable based on supplied parameters.*/
-    if (setenv(tmp,tmp1,1) == 0)
+    if (setenv(tmp,tmp1,1) == -1)
     {
-        printf("Environment variable set.\n");
-        return 0;
+        printf("ERROR: %s\n", strerror(errno));
+        return 1;
     }
     else
-        printf("Unable to set Environment Variable. Please try again.\n");
+        printf("Environment variable set.\n");
     return 0;
 }
 
 /* Delete the named environment variable. */
 int DeleteCommand(arg) char *arg;{
     char *x;
-    x = getenv(arg);
+    if((x = getenv(arg)) == NULL)
+    {
+        printf("Unable to get environment variable! Unable to complete delete operation.");
+        return 1;
+    }
     printf("Environment Variable to be Deleted: %s\n", arg);
     printf("Environment Variable Value before Deletion: %s\n", x);
     if(unsetenv(arg) == 0) {
@@ -521,8 +601,9 @@ int PrintCommand(arg) char *arg;{
 int PwdCommand(arg) char *arg; {
     char Directory[2048], *DirectoryString;
     DirectoryString = getcwd(Directory, 2048);
-    if (DirectoryString == 0){
-        printf("error");
+    if (DirectoryString == NULL){
+        printf("ERROR: %s\n", strerror(errno));
+        return 1;
     }
     printf("Current Directory: %s\n",Directory);
     return 0;
@@ -531,7 +612,7 @@ int PwdCommand(arg) char *arg; {
 int ChangeDirCommand(arg) char *arg; {
     /*Ensure that we don't get an error back when changing directories.*/
     if (chdir(arg) == -1){
-        perror(arg);
+        printf("ERROR: %s\n", strerror(errno));
         return 1;
     }
         /* Otherwise get the new directory and print it.*/
@@ -546,7 +627,7 @@ int QuitCommand(arg) char *arg; {
     quitFlag = 1;
     return 0;
 }
-
+/*Tokenizer, splits the arguments and detects presence of i/o or piping.*/
 void Tokenize(char *sentence, char** StorageArray, char * delimiter)
 {
     char *token;
@@ -572,10 +653,6 @@ void Tokenize(char *sentence, char** StorageArray, char * delimiter)
         counter++;
     }
     counter--;
-    //printf("Token %d: %s\n", counter, token);
-    //printf("StorageArray: %s\n", StorageArray[0]);
-    //printf("StorageArray: %s\n", StorageArray[1]);
-    //printf("StorageArray: %s\n", StorageArray[2]);
 }
 
 
