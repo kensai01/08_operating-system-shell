@@ -136,7 +136,7 @@ char ExecuteCommand(line) char *line;
                 !StorageParentArgs)
         {
             fprintf(stderr, "Dynamic Memory Allocation Error.\n");
-            exit(EXIT_FAILURE);
+            return 1;
         }
         /*Initial tokenization based on space.*/
         Tokenize(sentence, StorageSimpleExternalCmdArray, " ");
@@ -185,6 +185,7 @@ char ExecuteCommand(line) char *line;
 
         }
         /*Runs if we found both input & output markers during first tokenization.*/
+        /* ie: sort < infile > outfile */
         if (flagInput == 1 && flagOutput == 1 && flagPipeInst == 0){
             /*Do another tokenization to seperate the things we need for i/o redirection.*/
             Tokenize(sentence1, StorageOutArr, ">");
@@ -202,6 +203,7 @@ char ExecuteCommand(line) char *line;
             Tokenize(sentence1, StorageParentArgs, " ");
         }
         /*If we only found input marker.*/
+        /*ie: sort < foo*/
         if (flagInput == 1 && flagOutput == 0){
             Tokenize(sentence1, StorageInArr, "<");
             int ArrSize = sizeof(**StorageInArr);
@@ -210,6 +212,7 @@ char ExecuteCommand(line) char *line;
             Tokenize(sentence1, StorageParentArgs, " ");
         }
         /*If we only found output marker.*/
+        /* ls > save for example..*/
         if (flagInput == 0 && flagOutput == 1){
             Tokenize(sentence1, StorageOutArr, ">");
             int ArrSize = sizeof(**StorageOutArr);
@@ -230,31 +233,102 @@ char ExecuteCommand(line) char *line;
         if (flagSlash == 1 || flagDot == 1 || flagInput == 1 || flagOutput == 1) {
             pid = fork();
             if (pid < 0){
-                printf("Fork Failed\n");
+                printf("ERROR: %s\n", strerror(errno));
                 return 1;
                 }
                 /*No I/O Redirection, supplying complete path starting with . or / */
             else if (pid == 0 && (flagSlash == 1 || flagDot == 1)) {
-                //printf("My PID is %d\n", getpid());
-                //printf("Complete Path Supplied.\n");
-                //printf("Local PID %d\n", pid);
-                execvp(StorageSimpleExternalCmdArray[0],StorageSimpleExternalCmdArray);
+
+                if((execvp(StorageSimpleExternalCmdArray[0],StorageSimpleExternalCmdArray)) == -1)
+                {
+                    printf("ERROR: %s\n", strerror(errno));
+                }
+                return 1;
             }
 
             /*I/O Redirection logic.*/
-            else if (pid == 0 && (flagInput == 1 || flagOutput == 1) && (flagPipeInst == 0)){
+            else if (pid == 0 && (flagInput == 1 && flagOutput == 1) && (flagPipeInst == 0)){
                 int InFile, OutFile;
                 /*Open Input & Output files.*/
-                InFile = open(InputFileToken, O_RDONLY);
-                OutFile = open(OutFileToken, O_WRONLY | O_TRUNC | O_CREAT, S_IRUSR | S_IRGRP | S_IWGRP | S_IWUSR);
+                if ((InFile = open(InputFileToken, O_RDONLY)) == -1){
+                    printf("ERROR: %s\n", strerror(errno));
+                    return 1;
+                }
+                if ((OutFile = open(OutFileToken,
+                                    O_WRONLY |
+                                    O_TRUNC |
+                                    O_CREAT,
+                                    S_IRUSR |
+                                    S_IRGRP |
+                                    S_IWGRP |
+                                    S_IWUSR)) == -1){
+                    printf("ERROR: %s\n", strerror(errno));
+                    return 1;
+                }
                 /*Replace file descriptors /w dup2.*/
-                dup2(InFile, STDIN_FILENO);
-                dup2(OutFile, STDOUT_FILENO);
+                if ((dup2(InFile, STDIN_FILENO)) == -1){
+                    printf("ERROR: %s\n", strerror(errno));
+                    return 1;
+                }
+                if ((dup2(OutFile, STDOUT_FILENO)) == -1){
+                    printf("ERROR: %s\n", strerror(errno));
+                    return 1;
+                }
                 /*Close open files.*/
                 close(InFile);
                 close(OutFile);
 
-                execvp(StorageParentArgs[0],StorageParentArgs);
+                if ((execvp(StorageParentArgs[0],StorageParentArgs)) == -1){
+                    printf("ERROR: %s\n", strerror(errno));
+                    return 1;
+                }
+            }
+            else if (pid == 0 && (flagInput == 1 && flagOutput == 0) && (flagPipeInst == 0)){
+                int InFile;
+                /*Open Input & Output files.*/
+                if ((InFile = open(InputFileToken, O_RDONLY)) == -1){
+                    printf("ERROR: %s\n", strerror(errno));
+                    return 1;
+                }
+                /*Replace file descriptors /w dup2.*/
+                if ((dup2(InFile, STDIN_FILENO)) == -1){
+                    printf("ERROR: %s\n", strerror(errno));
+                    return 1;
+                }
+                /*Close open files.*/
+                close(InFile);
+
+                if ((execvp(StorageParentArgs[0],StorageParentArgs)) == -1){
+                    printf("ERROR: %s\n", strerror(errno));
+                    return 1;
+                }
+            }
+            else if (pid == 0 && (flagInput == 0 && flagOutput == 1) && (flagPipeInst == 0)){
+                int OutFile;
+                /*Open Input & Output files.*/
+                if ((OutFile = open(OutFileToken,
+                                    O_WRONLY |
+                                    O_TRUNC |
+                                    O_CREAT,
+                                    S_IRUSR |
+                                    S_IRGRP |
+                                    S_IWGRP |
+                                    S_IWUSR)) == -1){
+                    printf("ERROR: %s\n", strerror(errno));
+                    return 1;
+                }
+                /*Replace file descriptors /w dup2.*/
+                if ((dup2(OutFile, STDOUT_FILENO)) == -1){
+                    printf("ERROR: %s\n", strerror(errno));
+                    return 1;
+                }
+                /*Close open files.*/
+                close(OutFile);
+
+                if ((execvp(StorageParentArgs[0],StorageParentArgs)) == -1){
+                    printf("ERROR: %s\n", strerror(errno));
+                    return 1;
+                }
             }
 
             else {
@@ -318,7 +392,6 @@ char ExecuteCommand(line) char *line;
                 printf("Child Process Complete. Status %d\n", status);
                 flagPipeInst = 0;
                 return 0;
-
         }
             /*Simple external command that is not I/O redirect & not a . or / prefixed command.
              * ie. ls -al or sort ...*/
