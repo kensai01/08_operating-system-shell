@@ -8,7 +8,8 @@
 #include <sys/errno.h>
 #include <sys/wait.h>
 #include <stdbool.h>
-
+#include <signal.h>
+#include <setjmp.h>
 #include <readline/readline.h>
 #include <readline/history.h>
 
@@ -36,11 +37,7 @@ char *StripWhite(char*);
 COMMAND *FindCommand(char*);
 char ExecuteCommand(char*);
 void Tokenize(char *s, char** arr, char * delimiter);
-
-/*void handler(int signal) {
-    // call kill function
-    // call printf function
-}*/
+void sigintHandler(int sig_num);
 
 /*Using quit flag to give us a chance to clean up after ourselves. Otherwise
  * prog would quit right from the quit function and free(s) would never get to run again.*/
@@ -52,10 +49,18 @@ int flagInput = 0;
 int flagOutput = 0;
 int flagPipeInst = 0;
 
+/*Signal handling buffer var*/
+sigjmp_buf ctrlc_buf;
 
 int main(int argc, char **argv) {
 
-    //signal(SIGINT, handler);
+    if(signal(SIGINT, sigintHandler) == SIG_ERR)
+    {
+        printf("Failed to register interrupts with kernell\n");
+    }
+
+    while (sigsetjmp(ctrlc_buf, 1) != 0);
+
     char *s, *line;
     while ((s=readline("prompt> "))){
         if(quitFlag == 0) {
@@ -70,7 +75,14 @@ int main(int argc, char **argv) {
         }
     }
 }
-
+/*Control-C handling.*/
+void sigintHandler(int sig_num)
+{
+    if (sig_num == SIGINT){
+        printf("\nYou pressed CTRL+C, returning control to input terminal.\n");
+        siglongjmp(ctrlc_buf, 1);
+    }
+}
 /*Executes a command. */
 char ExecuteCommand(line) char *line;
 {
