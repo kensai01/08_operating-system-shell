@@ -11,6 +11,7 @@ https://www.ibm.com/support/knowledgecenter/en/SSB23S_1.1.0.14/gtpc2/cpp_unseten
 https://stackoverflow.com/questions/19074456/how-to-store-temp-value-for-strtok-without-changing-the-initial-token
 https://stackoverflow.com/questions/11818491/dynamic-parameter-passing-to-execlp-function-in-c
 www.cs.loyola.edu/~jglenn/702/S2005/Examples/dup2.html
+https://stackoverflow.com/questions/16828378/readline-get-a-new-prompt-on-sigint
 
 
 
