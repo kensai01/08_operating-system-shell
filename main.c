@@ -542,8 +542,28 @@ char * StripWhite(string) char *string; {
 
 /* Set the value of the environment variable to the value specified.*/
 int SetCommand(arg) char *arg;{
+    /*Local Variable Setup*/
+    char **TokenizedArguments = malloc(128 * sizeof(char*));
+    char * ArgumentCopy;
+    ArgumentCopy = malloc(255*sizeof(char));
+    strcpy(ArgumentCopy, arg);
+    printf("Argument Copy: %s\n", ArgumentCopy);
+    /*Split incomming arguments via space.*/
+    Tokenize(ArgumentCopy, TokenizedArguments, " ");
     //local variables to parse the incoming character array
     char *tmp,*tmp1;
+    int i;
+    //int ArrSize = sizeof(**TokenizedArguments)/sizeof(TokenizedArguments[0]);
+    //wrong size of array...
+    bool spaceChar = false;
+    while(TokenizedArguments[i] != NULL){
+        if(strcmp(TokenizedArguments[i], "=") == 0){
+            spaceChar = true;
+        }
+        i++;
+    }
+    if(spaceChar == false) {printf("ERROR: use is 'name = variable'\n"); return 1;}
+
     /*Tokenize the char array to delimit at the equals sign*/
     /*Effectively getting the name of the environment variable to set*/
     tmp = strtok(arg, "=");
