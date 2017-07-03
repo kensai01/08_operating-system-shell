@@ -1,3 +1,8 @@
+/**Developer: Mirza Besic - BR9975
+ * Dates: Started - 6/25/2017 Completed: N/A
+ * All Tasks are contained within this c file.**/
+
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -16,13 +21,14 @@
 /* Functions that will edit our environment variables & launch internal commands. */
 int SetCommand(), DeleteCommand(), PrintCommand(), PwdCommand(), ChangeDirCommand(), QuitCommand();
 
-/*Structure which will contain the programs for the environment manipulation.*/
+/*Structure which will contain the function calls for the environment manipulation.*/
 typedef struct {
     char *name;     //Function name
     int (*func)();  //Replaced the Function call with this, Function is depreciated
     char *doc;      //Tooltip
 } COMMAND;
 
+/*Internal Commands.*/
 COMMAND Commands[] = {
         {"set", SetCommand, "Set the value of the environment variable."},
         {"delete", DeleteCommand, "Remove the environment variable."},
@@ -32,13 +38,16 @@ COMMAND Commands[] = {
         {"exit", QuitCommand, "Terminate the shell."}
 };
 
-/*fwd declarations*/
+/**Fwd declarations**/
 char *StripWhite(char*);
 COMMAND *FindCommand(char*);
 char ExecuteCommand(char*);
 void Tokenize(char *s, char** arr, char * delimiter);
-void sigintHandler(int sig_num);
+void SigintHandler(int SignalNumber);
+void ExecuteDestination(int pfd[], char **arr1, char **arr2);
+void ExecuteSource(int pfd[], char **arr1);
 
+/**Global Variables**/
 /*Using quit flag to give us a chance to clean up after ourselves. Otherwise
  * prog would quit right from the quit function and free(s) would never get to run again.*/
 int quitFlag = 0;
@@ -50,19 +59,21 @@ int flagOutput = 0;
 int flagPipeInst = 0;
 
 /*Signal handling buffer var*/
-sigjmp_buf ctrlc_buf;
+sigjmp_buf SignalBuffer;
+
+/*Token Count*/
+int TokenCount = 0;
 
 int main(int argc, char **argv) {
 
-    if(signal(SIGINT, sigintHandler) == SIG_ERR)
-    {
-        printf("Failed to register interrupts with kernel.\n");
-    }
+    /*Signal Handling*/
+    if(signal(SIGINT, SigintHandler) == SIG_ERR) { printf("Failed to register interrupts with kernel.\n"); }
+    while (sigsetjmp(SignalBuffer, 1) != 0);
 
-    while (sigsetjmp(ctrlc_buf, 1) != 0);
-
+    /*main loop*/
     char *s, *line;
     while ((s=readline("prompt> "))){
+        TokenCount = 0;
         if(quitFlag == 0) {
             line = StripWhite(s);
             add_history(line);
@@ -76,18 +87,17 @@ int main(int argc, char **argv) {
     }
 }
 /*Control-C handling.*/
-void sigintHandler(int sig_num)
+void SigintHandler(int SignalNumber)
 {
-    if (sig_num == SIGINT){
-        printf("\nYou pressed CTRL+C, returning control to input terminal.\n");
-        siglongjmp(ctrlc_buf, 1);
+    if (SignalNumber == SIGINT){
+        printf("\nYou pressed CTRL+C (Signal -> SIGINT), returning control to input terminal.\n");
+        siglongjmp(SignalBuffer, 1);
     }
 }
-/*Executes a command. */
+/**Executes all the tasks**/
 char ExecuteCommand(line) char *line;
 {
     /**General Variable Setup for generation of tokens & argument storage.**/
-
     register int EachLetter;
     COMMAND *Command;
     char *WholeWord;
@@ -115,8 +125,8 @@ char ExecuteCommand(line) char *line;
     strcpy(sentence1, line);
 
     /*Set the flag according to which external command first element user supplied, either '.' or '/' */
-    if (externalCmdPrefix == '.') { flagDot = 1; printf("Dot Flag Set\n");}
-    if (externalCmdPrefix == '/') { flagSlash = 1; printf("Slash Flag Set\n");}
+    if (externalCmdPrefix == '.') { flagDot = 1; }
+    if (externalCmdPrefix == '/') { flagSlash = 1; }
 
     /*Isolate the internal command word from the rest of the message.
      * Used for internal commands. */
@@ -129,6 +139,12 @@ char ExecuteCommand(line) char *line;
     /**Internal Commands flow here**/
     /*Try to find the internal command word in the available list internal commands.*/
     Command = FindCommand(WholeWord);
+    if(Command){
+        /*Internal Commands return here.*/
+        while (whitespace (line[EachLetter])) EachLetter++;
+        WholeWord = line + EachLetter;
+        return ((*(Command->func)) (WholeWord));
+    }
 
     /**External Commands flow here**/
     /*If the command supplied is NOT internal, do the external commands logic.*/
@@ -245,8 +261,6 @@ char ExecuteCommand(line) char *line;
         /**External commands START**/
         /*Setup of external command variables*/
         pid_t pid;
-        pid_t pid2;
-        int pipefd[2];
 
         /*The command is external, so check if its prefixes with a / or a ., if so
         * the user is specifying a complete path to the executable file. Also
@@ -258,7 +272,8 @@ char ExecuteCommand(line) char *line;
                 return 1;
                 }
             /**Complete file path**/
-            /*No I/O Redirection, supplying complete path starting with . or / */
+            /*No I/O Redirection, supplying complete path starting with . or /
+             * ie. /bin/ls or ./test if it's an executable.*/
             else if (pid == 0 && (flagSlash == 1 || flagDot == 1)) {
                 if((execvp(StorageSimpleExternalCmdArray[0],StorageSimpleExternalCmdArray)) == -1)
                 {
@@ -268,6 +283,7 @@ char ExecuteCommand(line) char *line;
             }
 
             /**I/O Redirection logic.**/
+            /*Both input and output.*/
             else if (pid == 0 && (flagInput == 1 && flagOutput == 1) && (flagPipeInst == 0)){
                 int InFile, OutFile;
                 /*Open Input & Output files.*/
@@ -310,6 +326,7 @@ char ExecuteCommand(line) char *line;
                     return 1;
                 }
             }
+                /*Input Redirection only.*/
             else if (pid == 0 && (flagInput == 1 && flagOutput == 0) && (flagPipeInst == 0)){
                 int InFile;
                 /*Open Input & Output files.*/
@@ -333,6 +350,7 @@ char ExecuteCommand(line) char *line;
                     return 1;
                 }
             }
+                /*Output Redirection only.*/
             else if (pid == 0 && (flagInput == 0 && flagOutput == 1) && (flagPipeInst == 0)){
                 int OutFile;
                 /*Open Input & Output files.*/
@@ -383,105 +401,48 @@ char ExecuteCommand(line) char *line;
 
         /**Piping Logic**/
         if (flagPipeInst == 1){
+            int status;
+            pid_t pipePid;
+            int pipefd[2];
+
             /*Create the pipe.*/
             if (pipe(pipefd) == -1){
-                printf("ERROR: %s\n", strerror(errno));
+                printf("ERROR pipe: %s\n", strerror(errno));
+                //return 1;
+            }
+            /*Handle first portion before | */
+            ExecuteSource(pipefd, StorageParentArgs);
+            /*Handle second portion after | */
+            ExecuteDestination(pipefd, StoragePipeChild, StoragePipeWholeChildCmd);
+
+            if (close(pipefd[0]) == -1){
+                printf("ERROR close: %s\n", strerror(errno));
                 return 1;
             }
-            /*Ensure process forks.*/
-            if ((pid = fork()) == -1) {
-                printf("ERROR: %s\n", strerror(errno));
+            if (close(pipefd[1]) == -1){
+                printf("ERROR close: %s\n", strerror(errno));
                 return 1;
             }
-            /*Piping w/o i/o redirection, run first child.
-             * ie: ls -al | sort for example. */
-            if (pid == 0 && pid2 > 0 && flagInput == 0 && flagOutput == 0){
-                /*Replace stdin with input part of pipe.*/
-                if(dup2(pipefd[0], STDIN_FILENO) == -1){
-                    printf("ERROR: %s\n", strerror(errno));
-                    return 1;
-                }
-                /*Close the other pipe.*/
-                if (close(pipefd[1]) == -1)
-                {
-                    printf("ERROR: %s\n", strerror(errno));
-                    return 1;
-                }
-                /*Execute the first pipe.*/
-                if(execvp(StoragePipeChild[0], StoragePipeWholeChildCmd) == -1){
-                    printf("ERROR: %s\n", strerror(errno));
-                    return 1;
-                }
-            }
+
+            while ((pipePid = wait(&status)) != -1) //Reap kids.
+                fprintf(stderr, "Process %d exits with %d\n", pipePid, WEXITSTATUS(status));
+
+            //Reset piping flag.
+            flagPipeInst = 0;
+            return 0;
+
             /*Piping with input redirection, run first child.
-             * ie: ls -al < infile | cat for example.*/
+             * ie: ls -al < infile | cat for example.*//*
             //TODO implement piping /w input redirection
 
-            else if (pid == 0 && pid2 > 0 && flagInput == 1 && flagOutput == 1){
-                /*int InFile;
-                *//*Open Input & Output files.*//*
-                if ((InFile = open(InputFileToken, O_RDONLY)) == -1){
-                    printf("ERROR: %s\n", strerror(errno));
-                    return 1;
-                }
-                *//*Replace file descriptors /w dup2.*//*
-                if ((dup2(InFile, STDIN_FILENO)) == -1){
-                    printf("ERROR: %s\n", strerror(errno));
-                    return 1;
-                }
-                *//*Close open files.*//*
-                close(InFile);*/
-            }
-
-            /*Piping with output redirection, run first child.
-             * ie: ls -al | sort > outfile for example.*/
+            *//*Piping with output redirection, run first child.
+             * ie: ls -al | sort > outfile for example.*//*
             //TODO implement piping /w output redirection
 
-            /*Piping with Input & Output redirection, run first child.
+            *//*Piping with Input & Output redirection, run first child.
             * ie: ls -al < infile | sort > outfile for example.*/
             //TODO implement piping /w input & output redirection
 
-            int status;
-            while(waitpid(pid, &status, WUNTRACED | WCONTINUED) > 0);
-
-            /*Ensure process forks.*/
-            if ((pid2 = fork()) == -1) {
-                printf("ERROR: %s\n", strerror(errno));
-                return 1;
-            }
-            /*Piping w/o i/o redirection, run second child.
-             * ie: ls -al | sort for example. */
-            if (pid2 == 0 && pid > 0){
-                if(dup2(pipefd[1], STDOUT_FILENO) == -1)
-                {
-                    printf("ERROR: %s\n", strerror(errno));
-                    return 1;
-                }
-                if (close(pipefd[0]) == -1){
-                    printf("ERROR: %s\n", strerror(errno));
-                    return 1;
-                }
-
-                if(execvp(StorageParentArgs[0], StorageParentArgs) == -1)
-                {
-                    printf("ERROR: %s\n", strerror(errno));
-                    return 1;
-                }
-            }
-            /*Reset piping flag.*/
-            flagPipeInst = 0;
-
-            /* Wait for child processes to finish */
-            while (wait(&status) > 0)
-                if(pid2 >0 && pid>0){
-                    printf("\n");
-                }
-                if (wait(&status) == -1){
-                    printf("ERROR: %s\n", strerror(errno));
-                    return 1;
-                }
-                flagPipeInst = 0;
-                return 0;
         }
         /**Simple external cmd**/
         /*Simple external command that is not I/O redirect & not a . or / prefixed command.
@@ -490,13 +451,12 @@ char ExecuteCommand(line) char *line;
             pid = fork();
             if (pid < 0){
                 printf("ERROR: %s\n", strerror(errno));
-                return 1;
+                exit(1);
             }
             else if (pid == 0) {
-                /*User is supplying the executable file name.*/
                 if(execvp(StorageSimpleExternalCmdArray[0],StorageSimpleExternalCmdArray) == -1){
                     printf("ERROR: %s\n", strerror(errno));
-                    return 1;
+                    exit(1);
                 }
             }
             else {
@@ -509,14 +469,70 @@ char ExecuteCommand(line) char *line;
             }
         }
     }
-
-    /*Internal Commands return here.*/
-    while (whitespace (line[EachLetter])) EachLetter++;
-    WholeWord = line + EachLetter;
-    return ((*(Command->func)) (WholeWord));
+    return 0;
 }
 
+/*Second part of the pipe ie. what comes after | */
+void ExecuteDestination(int pipefd[], char **ChildArgArrOne, char **ChildArgArrTwo)
+{
+    pid_t pid;
+    switch (pid = fork()) {
+        case 0:
+            /*Replace stdin with input part of pipe.*/
+            if(dup2(pipefd[0], STDIN_FILENO) == -1){
+                printf("ERROR dup2: %s\n", strerror(errno));
+                exit(1);
+            }
+            /*Close the other pipe.*/
+            if (close(pipefd[1]) == -1)
+            {
+                printf("ERROR dup2: %s\n", strerror(errno));
+                exit(1);
+            }
+            /*Execute the first pipe.*/
+            if(execvp(ChildArgArrOne[0], ChildArgArrTwo) == -1){
+                printf("ERROR execvp: %s\n", strerror(errno));
+                exit(1);
+            }
+        default:
+            break;
 
+        case -1:
+            printf("ERROR fork: %s\n", strerror(errno));
+            exit(1);
+    }
+}
+
+/*First part of the pipe, what comes before |*/
+void ExecuteSource(int pipefd[], char **ParentArgArray)
+{
+    pid_t pid;
+    switch (pid = fork()) {
+        case 0:
+            /*Replace stdin with input part of pipe.*/
+            if(dup2(pipefd[1], STDOUT_FILENO) == -1){
+                printf("ERROR: %s\n", strerror(errno));
+                exit(1);
+            }
+            /*Close the other pipe.*/
+            if (close(pipefd[0]) == -1)
+            {
+                printf("ERROR: %s\n", strerror(errno));
+                exit(1);
+            }
+            /*Execute the first pipe.*/
+            if(execvp(ParentArgArray[0], ParentArgArray) == -1){
+                printf("ERROR execvp: %s\n", strerror(errno));
+                exit(1);
+            }
+        default:
+            break;
+
+        case -1:
+            printf("ERROR fork: %s\n", strerror(errno));
+            exit(1);
+    }
+}
 
 /*Look up command name, return null ptr if none was found otherwise
  * return the pointer to the command.*/
@@ -547,14 +563,11 @@ int SetCommand(arg) char *arg;{
     char * ArgumentCopy;
     ArgumentCopy = malloc(255*sizeof(char));
     strcpy(ArgumentCopy, arg);
-    printf("Argument Copy: %s\n", ArgumentCopy);
     /*Split incomming arguments via space.*/
     Tokenize(ArgumentCopy, TokenizedArguments, " ");
     //local variables to parse the incoming character array
     char *tmp,*tmp1;
     int i;
-    //int ArrSize = sizeof(**TokenizedArguments)/sizeof(TokenizedArguments[0]);
-    //wrong size of array...
     bool spaceChar = false;
     while(TokenizedArguments[i] != NULL){
         if(strcmp(TokenizedArguments[i], "=") == 0){
@@ -594,7 +607,7 @@ int DeleteCommand(arg) char *arg;{
     char *x;
     if((x = getenv(arg)) == NULL)
     {
-        printf("Unable to get environment variable! Unable to complete delete operation.");
+        printf("Unable to get environment variable! Unable to complete delete operation.\n");
         return 1;
     }
     printf("Environment Variable to be Deleted: %s\n", arg);
@@ -611,10 +624,15 @@ int DeleteCommand(arg) char *arg;{
 
 /*Print the named environment variable. */
 int PrintCommand(arg) char *arg;{
-    char *x;
-    x = getenv(arg);
+    char *EnvironmentVariable;
+    EnvironmentVariable = getenv(arg);
+    if(EnvironmentVariable == NULL) {
+        printf("Environment Variable does not exist.");
+        return 1;
+    }
+
     printf("Environment Variable Name: %s\n", arg);
-    printf("Environment Variable Value: %s\n", (x != NULL) ? x : "undefined");
+    printf("Environment Variable Value: %s\n", (EnvironmentVariable != NULL) ? EnvironmentVariable : "undefined\n");
     return 1;
 }
 
@@ -656,15 +674,14 @@ void Tokenize(char *sentence, char** StorageArray, char * delimiter)
     token = strtok(sentence, delimiter);
     next_token = token;
     while (next_token != NULL){
-        printf("Token %d: %s\n", counter, token);
+        TokenCount++;
         StorageArray[position] = token;
 
         /*Check for input / output markers*/
-        if(strcmp(StorageArray[position], "<") == 0){ flagInput = 1; printf("< was located!.\n");}
-        if(strcmp(StorageArray[position], ">") == 0){ flagOutput = 1; printf("> was located!.\n");}
-
+        if(strcmp(StorageArray[position], "<") == 0){ flagInput = 1;}
+        if(strcmp(StorageArray[position], ">") == 0){ flagOutput = 1;}
         /*Check for pipeline instructions.*/
-        if(strcmp(StorageArray[position], "|") == 0){ flagPipeInst = 1; printf("| was located!.\n");}
+        if(strcmp(StorageArray[position], "|") == 0){ flagPipeInst = 1;}
 
         position++;
         if((next_token = strtok(NULL, delimiter))){
@@ -674,7 +691,6 @@ void Tokenize(char *sentence, char** StorageArray, char * delimiter)
     }
     counter--;
 }
-
 
 
 
